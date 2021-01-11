@@ -1,0 +1,138 @@
+
+
+//////////////////////////////////////////////////////////////////////////
+//// Hydropower Plant
+
+/////////////////////////////////////////////////////////////////////////
+////                         sensors                                 ////
+
+sensor
+    real_port  mLevel   	uses GetMLevel;
+    real_port  hlevel   	uses GetHLevel;
+    real_port  lLevel       uses GetLLevel;
+    real_port  zLevel     	uses GetZLevel;
+
+/////////////////////////////////////////////////////////////////////////
+////                         actuators                               ////
+
+actuator
+    real_port     g1Motor 	uses StartG1;
+    real_port     g2Motor  	uses StartG2;
+
+/////////////////////////////////////////////////////////////////////////
+////                        output ports                             ////
+
+output
+	bool_port     startG1          	:= InitGenerators;
+    bool_port     startG2          	:= InitGenerators;
+	bool_port     stopG1          	:= InitGenerators;
+    bool_port     stopG2          	:= InitGenerators;
+	real_port     sensorLevel      	:= real_zero;
+    bool_port     openWindow      	:= HydropowerWindow;
+
+/////////////////////////////////////////////////////////////////////////
+////                         tasks                                   ////
+
+task readSensorTask(real_port m, real_port h, real_port l, real_port z)
+     output (sensorLevel) state () {
+    schedule ReadSensor(m, h, l, z, sensorLevel)
+}
+
+task generator1Task(real_port m, real_port z)
+     output (startG1, stopG1) state () {
+    schedule Generator1Task(m, z, startG1, stopG1)
+}
+
+task generator2Task(real_port h, real_port l) 
+	 output (startG2, stopG2) state () {
+   schedule Generator2Task(h, l, startG2, stopG2)
+}
+
+/////////////////////////////////////////////////////////////////////////
+////                    actuator drivers                             ////
+
+
+driver g1MotorDriver(startG1, stopG1) output (real_port flow) {
+    if constant_true() then ComputeG1MotorDriver(startG1, stopG1, flow)
+}
+
+driver g2MotorDriver(startG2, stopG2) output (real_port flow) {
+    if constant_true() then ComputeG2MotorDriver(startG2, stopG2, flow)
+}
+
+/////////////////////////////////////////////////////////////////////////
+////                    input drivers                                ////
+
+driver getSensorLevel (mLevel, hLevel, lLevel, zLevel)
+       output (real_port mLevelOut, real_port hLevelOut, real_port lLevelOut, real_port zLevelOut) {
+    if constant_true() then
+       GetSensorLevel(mLevel, hLevel, lLevel, zLevel, mLevelOut, hLevelOut, lLevelOut, zLevelOut)
+}
+
+driver getG1 (mLevel, zLevel)
+       output (real_port startG1, real_port stopG1) {
+    if constant_true() then
+       GetG1(mLevel, zLevel, startG1, stopG1)
+}
+
+driver getG2 (hLevel, lLevel)
+       output (real_port startG2, real_port stopG2) {
+    if constant_true() then
+       GetG2(hLevel, lLevel, startG2, stopG2)
+}
+
+/////////////////////////////////////////////////////////////////////////
+////                    mode switch drivers                          ////
+
+driver startG1Driver(mLevel, hLevel, lLevel, zLevel) output () {
+    if StartG1Driver(mLevel, hLevel, lLevel, zLevel) then dummy()
+}
+
+driver startG2Driver(mLevel, hLevel, lLevel, zLevel) output () {
+    if StartG2Driver(mLevel, hLevel, lLevel, zLevel) then dummy()
+}
+
+driver stopG1Driver(mLevel, hLevel, lLevel, zLevel) output () {
+   if StopG1Driver(mLevel, hLevel, lLevel, zLevel) then dummy()
+}
+
+driver stopG2Driver(mLevel, hLevel, lLevel, zLevel) output () {
+   if StopG2Driver(mLevel, hLevel, lLevel, zLevel) then dummy()
+}
+
+/////////////////////////////////////////////////////////////////////////
+////                         modes                                  ////
+
+start idle {
+
+   /////////////////////////////////////////////////////////////////////
+    ////                     mode M1                               ////
+
+    mode m1() period 1000 {
+		exitfreq 1 do g1Start(startG1Driver);
+        taskfreq 1 do readSensorTask(getSensorLevel);
+    }
+
+    //////////////////////////////////////////////////////////////////////
+    ////                     mode M2                             ////
+
+    mode m2() period 1000 {
+        actfreq 1 do g1Motor(g1MotorDriver);
+        exitfreq 1 do g2Start(startG2Driver);
+		exitfreq 1 do g1Stop(stopG1Driver);
+        taskfreq 1 do readSensorTask(getSensorLevel);
+		taskfreq 2 do generator1Task(getG1);
+    }
+
+    //////////////////////////////////////////////////////////////////////
+    ////                     mode M3                              ////
+
+    mode m3() period 1000 {
+        actfreq 1 do g1Motor(g1MotorDriver);
+		actfreq 1 do g2Motor(g2MotorDriver);
+		exitfreq 1 do g2Stop(stopG2Driver);
+        taskfreq 1 do readSensorTask(getSensorLevel);
+		taskfreq 2 do generator1Task(getG1);
+		taskfreq 3 do generator2Task(getG2);
+    }
+}
